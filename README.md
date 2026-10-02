@@ -39,6 +39,7 @@ If you use tmux, the OSC 52 fallback also needs `set -g set-clipboard on` in `~/
 ccsessions            # all projects
 ccsessions --here     # start scoped to the project for the current directory
 ccsessions --list     # print sessions as TSV (uuid, time, cwd, title) and exit
+ccsessions --export UUID [PATH]  # write one session as HTML and exit
 ccsessions --root DIR # use a different projects dir (or set $CCSESSIONS_ROOT)
 ```
 
@@ -52,11 +53,23 @@ ccsessions --root DIR # use a different projects dir (or set $CCSESSIONS_ROOT)
 | `d` / `delete` | Delete the session (asks for confirmation), then move to the next one |
 | `c` | Copy the session UUID |
 | `r` | Copy `cd '<project>' && claude --resume <uuid>` |
+| `e` | Export the session to HTML (prompts for where to save it) |
 | `t` | Show or hide thinking blocks |
 | `o` | Expand or truncate tool output |
 | `/` | Filter by title, UUID or project (`esc` clears it) |
 | `f5` / `ctrl+r` | Reload from disk |
 | `q` | Quit |
+
+## Exporting sessions
+
+Claude Code deletes session transcripts older than `cleanupPeriodDays` (30 by default) when it starts up. To keep sessions longer, raise that value in `~/.claude/settings.json`. For example, `"cleanupPeriodDays": 365`.
+
+To keep a readable copy of a session, press `e`. The tool asks where to save the HTML and suggests `~/Downloads/<project>-<yy-mm-dd>-<title>.html`. The file is self-contained and works offline:
+- Claude's replies are rendered as Markdown.
+- Thinking blocks and full tool output are collapsed into expandable sections.
+- The header holds the UUID and the resume command.
+
+If the file already exists, the tool asks before overwriting it.
 
 ## What delete removes
 
@@ -69,6 +82,8 @@ The confirmation dialog lists every path before anything is removed.
 Two safety checks:
 - Sessions that belong to a running Claude Code process are marked `●`, and the tool refuses to delete them. It finds them through `~/.claude/sessions/<pid>.json` and checks that the process is alive.
 - Sessions modified in the last 10 minutes show an extra warning.
+
+Delete is permanent. Nothing goes to the Trash, and a deleted session can't be resumed. To keep a record of a session, press `e` to export it to HTML before you press `d`. Export only reads the session's files, so it works on running sessions too.
 
 ## Development
 

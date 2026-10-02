@@ -21,38 +21,12 @@ from textual.widgets import Button, DataTable, Footer, Input, Label, OptionList,
 from textual.widgets.option_list import Option
 
 from .clipboard import copy_native
+from .export import default_export_path, export_session
+from .fmt import fmt_iso, fmt_size, fmt_time, tilde
 from .store import Message, Session, Store, decode_project_dir, load_messages
 
 ALL = "__all__"
 TOOL_RESULT_PREVIEW_LINES = 8
-HOME = str(Path.home())
-
-
-def tilde(path: str) -> str:
-    return "~" + path[len(HOME):] if path.startswith(HOME) else path
-
-
-def fmt_time(ts: float) -> str:
-    dt = datetime.fromtimestamp(ts)
-    return dt.strftime("%H:%M") if dt.date() == datetime.now().date() else dt.strftime("%y-%m-%d")
-
-
-def fmt_iso(iso: str) -> str:
-    if not iso:
-        return "?"
-    try:
-        dt = datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone()
-    except ValueError:
-        return iso
-    return dt.strftime("%Y-%m-%d %H:%M")
-
-
-def fmt_size(n: int) -> str:
-    for unit in ("B", "K", "M", "G"):
-        if n < 1024:
-            return f"{n:.0f}{unit}" if unit == "B" else f"{n:.1f}{unit}"
-        n /= 1024
-    return f"{n:.1f}T"
 
 
 class ConfirmDelete(ModalScreen[bool]):
@@ -96,6 +70,64 @@ class ConfirmDelete(ModalScreen[bool]):
         self.dismiss(False)
 
 
+class ExportDialog(ModalScreen[Optional[Path]]):
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, session: Session, default: Path):
+        super().__init__()
+        self.session = session
+        self.default = default
+        self._confirmed_overwrite: Optional[Path] = None
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="export-dialog"):
+            yield Label("Export session to HTML", id="export-title")
+            yield Static(Text(self.session.title, style="bold"))
+            yield Static(Text(self.session.id, style="cyan"))
+            yield Label("\nSave to:")
+            yield Input(value=tilde(str(self.default)), id="export-path")
+            yield Static("", id="export-warn")
+            with Horizontal(id="dialog-buttons"):
+                yield Button("Save (enter)", variant="primary", id="save")
+                yield Button("Cancel (esc)", id="cancel")
+
+    def on_mount(self) -> None:
+        self.query_one("#export-path", Input).focus()
+
+    def _submit(self) -> None:
+        raw = self.query_one("#export-path", Input).value.strip()
+        if not raw:
+            return
+        dest = Path(raw).expanduser()
+        if dest.is_dir():
+            dest = dest / self.default.name
+        if dest.exists() and self._confirmed_overwrite != dest:
+            self._confirmed_overwrite = dest
+            self.query_one("#export-warn", Static).update(
+                Text(f"⚠ {tilde(str(dest))} exists — press enter again to overwrite.", style="bold yellow"))
+            return
+        self.dismiss(dest)
+
+    @on(Input.Changed, "#export-path")
+    def path_changed(self, event: Input.Changed) -> None:
+        self._confirmed_overwrite = None
+        self.query_one("#export-warn", Static).update("")
+
+    @on(Input.Submitted, "#export-path")
+    def path_submitted(self, event: Input.Submitted) -> None:
+        self._submit()
+
+    @on(Button.Pressed)
+    def pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "save":
+            self._submit()
+        else:
+            self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class SessionsApp(App):
     TITLE = "Claude Sessions"
     CSS = """
@@ -114,6 +146,10 @@ class SessionsApp(App):
     #dialog-title { text-style: bold; color: $error; margin-bottom: 1; }
     #dialog-buttons { height: auto; align-horizontal: right; margin-top: 1; }
     #dialog-buttons Button { margin-left: 2; }
+    ExportDialog { align: center middle; }
+    #export-dialog { width: 90; max-width: 95%; height: auto; border: thick $primary; background: $surface; padding: 1 2; }
+    #export-title { text-style: bold; color: $primary; margin-bottom: 1; }
+    #export-path { margin-top: 0; }
     """
 
     BINDINGS = [
@@ -126,6 +162,7 @@ class SessionsApp(App):
         Binding("d,delete", "delete", "Delete"),
         Binding("c", "copy_id", "Copy UUID"),
         Binding("r", "copy_resume", "Copy resume cmd"),
+        Binding("e", "export", "Export"),
         Binding("t", "toggle_thinking", "Thinking"),
         Binding("o", "toggle_output", "Tool output"),
         Binding("slash", "filter", "Filter"),
@@ -445,6 +482,27 @@ class SessionsApp(App):
         if self.current:
             self._copy(self.current.resume_command(), "resume command")
 
+    def action_export(self) -> None:
+        s = self.current
+        if not s:
+            return
+        project = s.cwd or self.project_label(s)
+
+        def done(dest: Optional[Path]) -> None:
+            if dest:
+                self.run_export(s, project, dest)
+
+        self.push_screen(ExportDialog(s, default_export_path(s, project)), done)
+
+    @work(thread=True, group="export")
+    def run_export(self, s: Session, project: str, dest: Path) -> None:
+        try:
+            path = export_session(s, project, dest)
+        except OSError as e:
+            self.call_from_thread(self.notify, f"Export failed: {e}", severity="error", timeout=6)
+            return
+        self.call_from_thread(self.notify, f"Exported to {tilde(str(path))}", timeout=4)
+
     def action_delete(self) -> None:
         s = self.current
         if not s:
@@ -484,6 +542,8 @@ def main() -> None:
                         help="projects directory (default: ~/.claude/projects, or $CCSESSIONS_ROOT)")
     parser.add_argument("--here", action="store_true", help="start scoped to the project for the current directory")
     parser.add_argument("--list", action="store_true", help="print sessions as TSV and exit (no UI)")
+    parser.add_argument("--export", nargs="+", metavar=("UUID", "PATH"),
+                        help="export a session to HTML and exit (default path: ~/Downloads/<project>-<date>-<title>.html)")
     args = parser.parse_args()
 
     store = Store(args.root)
@@ -491,6 +551,18 @@ def main() -> None:
     if args.list:
         for s in store.all_sessions():
             print(f"{s.id}\t{datetime.fromtimestamp(s.mtime):%Y-%m-%d %H:%M}\t{s.cwd or decode_project_dir(s.project_dir)}\t{s.title}")
+        return
+    if args.export:
+        if len(args.export) > 2:
+            parser.error("--export takes a UUID and an optional PATH")
+        sess = next((s for s in store.all_sessions() if s.id == args.export[0]), None)
+        if not sess:
+            parser.error(f"no session with UUID {args.export[0]}")
+        proj = sess.cwd or decode_project_dir(sess.project_dir)
+        dest = Path(args.export[1]) if len(args.export) > 1 else default_export_path(sess, proj)
+        if dest.expanduser().is_dir():
+            dest = dest / default_export_path(sess, proj).name
+        print(export_session(sess, proj, dest))
         return
 
     project = None

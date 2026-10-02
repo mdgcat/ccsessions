@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.9"
 resolution-markers = [
     "python_full_version >= '3.10'",
@@ -11,11 +11,16 @@ name = "ccsessions"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "markdown-it-py", version = "3.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "markdown-it-py", version = "4.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "textual" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "textual", specifier = ">=8.2.8" }]
+requires-dist = [
+    { name = "markdown-it-py", specifier = ">=3.0" },
+    { name = "textual", specifier = ">=8.2.8" },
+]
 
 [[package]]
 name = "linkify-it-py"

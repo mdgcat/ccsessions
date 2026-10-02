@@ -111,6 +111,33 @@ async def main() -> None:
         await pilot.pause()
         app.save_screenshot(str(home.parent / "screen.svg"))
 
+        # Export: the dialog defaults to ~/Downloads; point it at the fixture dir instead.
+        await pilot.press("e")
+        await pilot.pause()
+        assert type(app.screen).__name__ == "ExportDialog"
+        inp = app.screen.query_one("#export-path")
+        default_name = Path(inp.value).name
+        assert default_name.endswith(".html") and default_name.count("-") >= 3, default_name
+        out = home.parent / "export" / default_name
+        inp.value = str(out)
+        await pilot.press("enter")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert out.is_file(), out
+        page = out.read_text()
+        assert "<html" in page and app.current.id in page
+        print("exported", out.name, len(page), "bytes")
+
+        # Exporting again to the same path asks before overwriting.
+        await pilot.press("e")
+        await pilot.pause()
+        app.screen.query_one("#export-path").value = str(out)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert type(app.screen).__name__ == "ExportDialog"  # still open, warning shown
+        await pilot.press("escape")
+        await pilot.pause()
+
     # Delete a session that has file-history/session-env dirs.
     target = next((s for s in store.all_sessions() if (home / "file-history" / s.id).exists()), None)
     if target:
@@ -118,6 +145,19 @@ async def main() -> None:
         store.delete(target)
         assert not any(p.exists() for p in paths)
         print("removed artifacts:", [str(p.relative_to(home)) for p in paths])
+    # HTML in transcript text is escaped, collapsibles render for thinking/tool output.
+    from ccsessions.export import render_html
+    from ccsessions.store import Message
+    s0 = store.all_sessions()[0]
+    page = render_html(s0, [
+        Message("user", "text", "<script>alert(1)</script>"),
+        Message("assistant", "text", "**hi** <script>x</script>"),
+        Message("assistant", "thinking", "hmm"),
+        Message("assistant", "tool_use", "ls", name="Bash"),
+        Message("user", "tool_result", "a\nb", is_error=True),
+    ], s0.cwd)
+    assert "<script>" not in page and "<strong>hi</strong>" in page
+    assert page.count("<details") == 2 and 'class="error"' in page
     print("OK")
 
 
