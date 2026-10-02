@@ -1,6 +1,6 @@
-# ccsessions
+# Claude Sessions Tool
 
-A terminal UI for browsing and cleaning up Claude Code sessions stored in `~/.claude/projects`. It runs on macOS and Linux.
+A terminal UI for browsing and cleaning up Claude Code sessions stored in `~/.claude/projects`. It runs on macOS and Linux.  If you use Claude /remote-control, you know that the sessions are not visible on your /resume history.  This tool was specially designed to view and copy session UUID for resume operations.
 
 ```
 ┌ Projects ───────────────────┬ Session title ────────────────────────────┐
@@ -25,9 +25,13 @@ uv run --project /path/to/claude-sessions-tool ccsessions
 
 If you pull changes later, upgrade with `uv tool install --reinstall /path/to/claude-sessions-tool`.
 
-### Clipboard on Linux
+### Clipboard
 
-The tool tries these in order: `wl-copy` (Wayland), then `xclip` or `xsel` (X11). If none of them is available, it falls back to the OSC 52 terminal escape, which works in most modern terminals and over SSH. On macOS it uses `pbcopy`. If you use tmux, the OSC 52 fallback also needs `set -g set-clipboard on` in `~/.tmux.conf`.
+The tool tries these in order in Linux: `wl-copy` (Wayland), then `xclip` or `xsel` (X11). If none of them is available, it falls back to the OSC 52 terminal escape, which works in most modern terminals and over SSH.
+
+On macOS it uses `pbcopy`.
+
+If you use tmux, the OSC 52 fallback also needs `set -g set-clipboard on` in `~/.tmux.conf`.
 
 ## Usage
 

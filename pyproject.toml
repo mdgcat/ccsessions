@@ -3,7 +3,7 @@ name = "ccsessions"
 version = "0.1.0"
 description = "Terminal browser for Claude Code sessions in ~/.claude/projects"
 authors = [
-    { name = "MDGCAT", email = "michael@meetcarrot.xyz" }
+    { name = "MDGCAT", email = "michael@iguillory.com" }
 ]
 requires-python = ">=3.9"
 dependencies = [
